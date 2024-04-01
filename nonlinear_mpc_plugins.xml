@@ -1,0 +1,5 @@
+<library path="lib/libnonlinear_mpc">
+  <class type="nonlinear_mpc::NonlinearMPC" base_class_type="nonlinear_mpc::NonlinearMPCInterface">
+    <description>Nonlinear MPC</description>
+  </class>
+</library>
