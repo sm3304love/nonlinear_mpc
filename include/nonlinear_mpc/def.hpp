@@ -3,8 +3,8 @@
 #include <array>
 #include <cmath>
 
-#define SAMPLE_TIME 0.05
-#define TIME_HORIZON 0.5
+#define SAMPLE_TIME 0.01
+#define TIME_HORIZON 0.1
 
 static constexpr int dof = 6;
 
