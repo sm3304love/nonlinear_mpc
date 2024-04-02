@@ -15,7 +15,8 @@ NonlinearMPC::NonlinearMPC()
     Qf_ori.diagonal() << 200, 200, 200;
     last_cmd.setZero();
 
-    urdf_filename = "/home/harco/mpc_ws/src/ur20_description/urdf/ur20.urdf";
+    urdf_filename = package_path + "/urdf/ur20.urdf";
+
     pinocchio::urdf::buildModel(urdf_filename, model);
     data = pinocchio::Data(model);
     frame_id = model.getFrameId("tool0");
@@ -64,7 +65,7 @@ bool NonlinearMPC::initialize(ros::NodeHandle &nh, double dt)
     ROS_INFO("MPC initial linearization");
 
     mpc::NLParameters params;
-    params.maximum_iteration = 100;
+    params.maximum_iteration = 250;
     params.relative_ftol = 1e-4;
     params.relative_xtol = 1e-6;
 
@@ -87,6 +88,8 @@ mpc::cvec<num_inputs> NonlinearMPC::computeCommand(mpc::cvec<num_states> x) // w
 
     r = mpc_solver.step(x0, u0);
 
+    std::cout << mpc_solver.getExecutionStats();
+
     last_cmd = r.cmd;
 
     return last_cmd;
@@ -97,7 +100,6 @@ void NonlinearMPC::set_obj()
     mpc_solver.setObjectiveFunction([&](const mpc::mat<pred_hor + 1, num_states> &x,
                                         const mpc::mat<pred_hor + 1, num_outputs> &,
                                         const mpc::mat<pred_hor + 1, num_inputs> &u, const double &) {
-        // std::cout << "x" << std::endl << x << std::endl;
         double cost = 0;
         for (int i = 0; i < pred_hor; i++)
         {
@@ -178,35 +180,5 @@ Eigen::Quaterniond NonlinearMPC::getEeOriRef() const
 {
     return ee_ori_ref;
 }
-
-// Eigen::Affine3d NonlinearMPC::fk(const Eigen::VectorXd &q)
-// {
-//     Eigen::Affine3d T = Eigen::Affine3d::Identity();
-
-//     // DH parameters
-//     std::vector<double> d = {0.2363, 0, 0, 0.2010, 0.1593, 0.1543};
-//     std::vector<double> r = {0, -0.8620, -0.7287, 0, 0, 0};
-//     std::vector<double> alpha = {M_PI / 2, 0, 0, M_PI / 2, -M_PI / 2, 0};
-
-//     for (int i = 0; i < 6; i++)
-//     {
-//         Eigen::Affine3d A = Eigen::Affine3d::Identity();
-//         A.matrix()(0, 0) = cos(q(i));
-//         A.matrix()(0, 1) = -sin(q(i)) * cos(alpha[i]);
-//         A.matrix()(0, 2) = sin(q(i)) * sin(alpha[i]);
-//         A.matrix()(0, 3) = r[i] * cos(q(i));
-//         A.matrix()(1, 0) = sin(q(i));
-//         A.matrix()(1, 1) = cos(q(i)) * cos(alpha[i]);
-//         A.matrix()(1, 2) = -cos(q(i)) * sin(alpha[i]);
-//         A.matrix()(1, 3) = r[i] * sin(q(i));
-//         A.matrix()(2, 1) = sin(alpha[i]);
-//         A.matrix()(2, 2) = cos(alpha[i]);
-//         A.matrix()(2, 3) = d[i];
-//         A.matrix()(3, 3) = 1;
-
-//         T = T * A;
-//     }
-//     return T;
-// }
 
 } // namespace nonlinear_mpc

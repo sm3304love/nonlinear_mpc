@@ -12,6 +12,7 @@
 #include <mpc/NLMPC.hpp>
 #include <nonlinear_mpc/def.hpp>
 #include <nonlinear_mpc/nonlinear_mpc_interface.hpp>
+#include <ros/package.h>
 #include <std_msgs/Float64MultiArray.h>
 
 namespace nonlinear_mpc
@@ -62,6 +63,7 @@ class NonlinearMPC : public NonlinearMPCInterface
     pinocchio::Data data;
     std::string urdf_filename;
     int frame_id;
+    std::string package_path = ros::package::getPath("ur20_description");
 
     Eigen::VectorXd x_lb = Eigen::VectorXd::Zero(12);
     Eigen::VectorXd x_Ub = Eigen::VectorXd::Zero(12);

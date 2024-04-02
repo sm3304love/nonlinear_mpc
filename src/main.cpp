@@ -122,7 +122,12 @@ int main(int argc, char **argv)
 
     MotionPlanner NMPCPlanner;
 
+    ros::AsyncSpinner spinner(8);
+    spinner.start();
+
     NMPCPlanner.run();
+
+    spinner.stop();
 
     return 0;
 }
