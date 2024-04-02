@@ -40,7 +40,7 @@ void NonlinearMPC::set_dynamics(const mpc::cvec<num_states> &x)
     B.block<6, 6>(6, 0) = Eigen::MatrixXd::Identity(6, 6);
 
     auto stateEq = [&](mpc::cvec<num_states> &dx, const mpc::cvec<num_states> &x, const mpc::cvec<num_inputs> &u,
-                       const unsigned int &) { dx = A * x + B * u; }; // problem?
+                       const unsigned int &) { dx = A * x + B * u; };
 
     mpc_solver.setStateSpaceFunction(stateEq);
 }
@@ -86,7 +86,7 @@ mpc::cvec<num_inputs> NonlinearMPC::computeCommand(mpc::cvec<num_states> x) // w
 
     mpc::Result<num_inputs> r;
 
-    r = mpc_solver.step(x0, u0);
+    r = mpc_solver.step(x0, u0); // slow
 
     std::cout << mpc_solver.getExecutionStats();
 
