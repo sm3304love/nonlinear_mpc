@@ -4,7 +4,7 @@
 #include <cmath>
 
 #define SAMPLE_TIME 0.01
-#define TIME_HORIZON 0.1
+#define TIME_HORIZON 0.05
 
 static constexpr int dof = 6;
 

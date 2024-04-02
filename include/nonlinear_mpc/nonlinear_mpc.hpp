@@ -29,7 +29,6 @@ class NonlinearMPC : public NonlinearMPCInterface
     mpc::cvec<num_inputs> computeCommand(mpc::cvec<num_states> x);
     void set_obj();
     void set_constraints();
-    // Eigen::Affine3d fk(const Eigen::VectorXd &q);
 
     void setEePosRef(const Eigen::VectorXd &pos) override;
     Eigen::VectorXd getEePosRef() const override;

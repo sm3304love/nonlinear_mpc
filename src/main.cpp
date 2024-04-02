@@ -91,8 +91,6 @@ class MotionPlanner
                 }
 
                 joint_vel_command_pub.publish(cmd_msg);
-
-                std::cout << "u: " << u.transpose() << std::endl;
             }
             count++;
             ros::spinOnce();
@@ -122,7 +120,7 @@ int main(int argc, char **argv)
 
     MotionPlanner NMPCPlanner;
 
-    ros::AsyncSpinner spinner(8);
+    ros::AsyncSpinner spinner(12);
     spinner.start();
 
     NMPCPlanner.run();
