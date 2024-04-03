@@ -2,7 +2,7 @@
 This algorithm plans the motion of UR20 based on Nonlinear Model Predictive Control (NMPC).
 
 ## Dependancies
-* [UR20 gazebo sim environment](https://github.com/sm3304love/ur20_description)
+* [UR20 gazebo simulation environment](https://github.com/sm3304love/ur20_description)
 * ROS Noetic
 * [libmpc](https://github.com/nicolapiccinelli/libmpc)
 
