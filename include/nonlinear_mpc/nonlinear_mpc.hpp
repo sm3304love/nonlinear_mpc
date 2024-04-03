@@ -67,6 +67,8 @@ class NonlinearMPC : public NonlinearMPCInterface
     Eigen::VectorXd x_lb = Eigen::VectorXd::Zero(12);
     Eigen::VectorXd x_Ub = Eigen::VectorXd::Zero(12);
 
+    int thread_num = 12;
+
   protected:
     void set_dynamics(const mpc::cvec<num_states> &);
 };

@@ -81,7 +81,10 @@ class MotionPlanner
                 mpc::cvec<num_states> x = joint_state_vec;
 
                 u = mpc->computeCommand(x);
-                cmd = u * dt;
+                cmd += u * dt;
+
+                // std::cout << "cmd: " << cmd.transpose() << std::endl;
+                // std::cout << "u: " << u.transpose() << std::endl;
 
                 std_msgs::Float64MultiArray cmd_msg;
 
@@ -109,7 +112,7 @@ class MotionPlanner
     Eigen::VectorXd cmd = Eigen::VectorXd::Zero(6);
 
     geometry_msgs::Pose target_pose;
-    float hz = 100;
+    float hz = 100; // 이거 반영해야 함
     boost::shared_ptr<nonlinear_mpc::NonlinearMPCInterface> mpc;
 };
 

@@ -9,16 +9,17 @@ NonlinearMPC::NonlinearMPC()
 {
     Q_trans.diagonal() << 800, 800, 800;
     Q_ori.diagonal() << 300, 300, 300;
-    Q_vel.diagonal() << 50, 50, 50, 50, 50, 50;
+    Q_vel.diagonal() << 10, 10, 10, 10, 10, 10;
     R.diagonal() << 0.01, 0.01, 0.01, 0.01, 0.01, 0.01;
-    Qf_trans.diagonal() << 500, 500, 500;
-    Qf_ori.diagonal() << 200, 200, 200;
+    Qf_trans.diagonal() << 1600, 1600, 1600;
+    Qf_ori.diagonal() << 600, 600, 600;
     last_cmd.setZero();
 
     urdf_filename = package_path + "/urdf/ur20.urdf";
 
     pinocchio::urdf::buildModel(urdf_filename, model);
     data = pinocchio::Data(model);
+
     frame_id = model.getFrameId("tool0");
 
     x_lb << -6.283185307179586, -6.283185307179586, -3.141592653589793, -6.283185307179586, -6.283185307179586,
@@ -65,7 +66,7 @@ bool NonlinearMPC::initialize(ros::NodeHandle &nh, double dt)
     ROS_INFO("MPC initial linearization");
 
     mpc::NLParameters params;
-    params.maximum_iteration = 250;
+    params.maximum_iteration = 150;
     params.relative_ftol = 1e-4;
     params.relative_xtol = 1e-6;
 
@@ -86,9 +87,9 @@ mpc::cvec<num_inputs> NonlinearMPC::computeCommand(mpc::cvec<num_states> x) // w
 
     mpc::Result<num_inputs> r;
 
-    r = mpc_solver.step(x0, u0); // slow
+    r = mpc_solver.step(x0, u0);
 
-    std::cout << mpc_solver.getExecutionStats();
+    // std::cout << mpc_solver.getExecutionStats();
 
     last_cmd = r.cmd;
 
@@ -149,8 +150,8 @@ void NonlinearMPC::set_constraints()
         {
             for (size_t j = 0; j < num_inputs; j++)
             {
-                in_con(index++) = u(i, j) - 5.0;  // u <= u_max
-                in_con(index++) = -u(i, j) - 5.0; // u_min <= u
+                in_con(index++) = u(i, j) - 1.0;  // u <= u_max
+                in_con(index++) = -u(i, j) - 1.0; // u_min <= u
             }
             for (int j = 0; j < num_states; j++) //
             {
