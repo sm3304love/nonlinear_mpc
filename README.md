@@ -1,5 +1,10 @@
-# Notice
-The code in this repository is not working yet.
+# Nonlinear Model Predictive Control based Motion Planning 
+This algorithm plans the motion of UR20 based on Nonlinear Model Predictive Control (NMPC).
+
+## Dependancies
+* [UR20 gazebo sim environment](https://github.com/sm3304love/ur20_description)
+* ROS Noetic
+* [libmpc](https://github.com/nicolapiccinelli/libmpc)
 
 ## HOW TO USE
 ### Get simulation evironment
@@ -14,3 +19,12 @@ roslaunch ur20_description velocity_sim.launch
 ```
 rosrun nonlinear_mpc main
 ```
+
+### Visual
+
+https://github.com/sm3304love/nonlinear_mpc/assets/57741032/b84f1e86-e72a-4287-82df-489cb880a1b1
+
+### TO DO
+- [ ] Self collision
+- [ ] Obstacle avoidance
+
