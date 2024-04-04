@@ -5,6 +5,7 @@ This algorithm plans the motion of UR20 based on Nonlinear Model Predictive Cont
 * [UR20 gazebo simulation environment](https://github.com/sm3304love/ur20_description)
 * ROS Noetic
 * [libmpc](https://github.com/nicolapiccinelli/libmpc)
+* Pinocchio 
 
 ## HOW TO USE
 ### Get simulation evironment
