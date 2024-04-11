@@ -1,4 +1,7 @@
-# Nonlinear Model Predictive Control based Motion Planning 
+## Notice
+Please refer to the ```franka``` branch for a version that adds obstacle avoidance.
+
+## Nonlinear Model Predictive Control based Motion Planning 
 This algorithm plans the motion of UR20 based on Nonlinear Model Predictive Control (NMPC).
 
 ## Dependancies
