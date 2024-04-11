@@ -1,8 +1,13 @@
 #pragma once
 
+#include <pinocchio/algorithm/crba.hpp>
 #include <pinocchio/algorithm/frames.hpp>
+#include <pinocchio/algorithm/geometry.hpp>
 #include <pinocchio/algorithm/jacobian.hpp>
+#include <pinocchio/algorithm/joint-configuration.hpp>
+#include <pinocchio/algorithm/kinematics.hpp>
 #include <pinocchio/multibody/data.hpp>
+#include <pinocchio/multibody/geometry.hpp>
 #include <pinocchio/multibody/model.hpp>
 #include <pinocchio/parsers/urdf.hpp>
 
@@ -35,6 +40,11 @@ class NonlinearMPC : public NonlinearMPCInterface
     void setEeOriRef(const Eigen::Quaterniond &ori) override;
     Eigen::Quaterniond getEeOriRef() const override;
 
+    void setEePosObs(const Eigen::VectorXd &pos) override;
+    Eigen::VectorXd getEePosObs() const override;
+    void setEeOriObs(const Eigen::Quaterniond &ori) override;
+    Eigen::Quaterniond getEeOriObs() const override;
+
     mpc::mat<num_states, num_states> A;
     mpc::mat<num_states, num_inputs> B;
 
@@ -56,18 +66,25 @@ class NonlinearMPC : public NonlinearMPCInterface
     Eigen::VectorXd ee_pos_ref = Eigen::VectorXd::Zero(3);
     Eigen::Quaterniond ee_ori_ref = Eigen::Quaterniond::Identity();
 
-    mpc::Result<num_inputs> r_before;
+    Eigen::VectorXd obs_pos = Eigen::VectorXd::Zero(3);
+    Eigen::Quaterniond obs_ori = Eigen::Quaterniond::Identity();
+
+    // mpc::Result<num_inputs> r_before;
     // robotics
     pinocchio::Model model;
     pinocchio::Data data;
+    pinocchio::GeometryModel geomModel;
+    pinocchio::GeometryData geomData;
+
     std::string urdf_filename;
     int frame_id;
-    std::string package_path = ros::package::getPath("ur20_description");
+    std::string package_path = ros::package::getPath("franka_panda_description");
 
-    Eigen::VectorXd x_lb = Eigen::VectorXd::Zero(12);
-    Eigen::VectorXd x_Ub = Eigen::VectorXd::Zero(12);
+    Eigen::VectorXd x_lb = Eigen::VectorXd::Zero(num_states);
+    Eigen::VectorXd x_Ub = Eigen::VectorXd::Zero(num_states);
 
-    int thread_num = 12;
+    std::shared_ptr<hpp::fcl::CollisionObject> obs;
+    hpp::fcl::Transform3f obs_transform;
 
   protected:
     void set_dynamics(const mpc::cvec<num_states> &);

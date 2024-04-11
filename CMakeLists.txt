@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.0.2)
 project(nonlinear_mpc)
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "-DEIGEN_STACK_ALLOCATION_LIMIT=0 -march=native -flto -O3")
-
+set(CMAKE_CXX_FLAGS "-DEIGEN_STACK_ALLOCATION_LIMIT=0 -flto -O3") 
+# -march=native 
 find_package(mpc++ CONFIG REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system thread)
 find_package(pinocchio REQUIRED)

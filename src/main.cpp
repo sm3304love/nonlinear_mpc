@@ -14,26 +14,22 @@ class MotionPlanner
   public:
     MotionPlanner()
     {
-        joint_vel_command_pub = nh_.advertise<std_msgs::Float64MultiArray>("/ur20/ur20_joint_controller/command", 10);
-        joint_states_sub = nh_.subscribe("/ur20/joint_states", 10, &MotionPlanner::jointstatesCallback, this);
+        joint_vel_command_pub = nh_.advertise<std_msgs::Float64MultiArray>("/panda/panda_joint_controller/command", 10);
+        joint_states_sub = nh_.subscribe("/panda/joint_states", 10, &MotionPlanner::jointstatesCallback, this);
         target_state_sub = nh_.subscribe("/gazebo/model_states", 10, &MotionPlanner::target_states_callback, this);
     }
 
     void jointstatesCallback(const sensor_msgs::JointState::ConstPtr &JointState)
     {
 
-        joint_state_vec[0] = JointState->position[2];
-        joint_state_vec[1] = JointState->position[1];
-        joint_state_vec[2] = JointState->position[0];
-        joint_state_vec[3] = JointState->position[3];
-        joint_state_vec[4] = JointState->position[4];
-        joint_state_vec[5] = JointState->position[5];
-        joint_state_vec[6] = JointState->velocity[2];
-        joint_state_vec[7] = JointState->velocity[1];
-        joint_state_vec[8] = JointState->velocity[0];
-        joint_state_vec[9] = JointState->velocity[3];
-        joint_state_vec[10] = JointState->velocity[4];
-        joint_state_vec[11] = JointState->velocity[5];
+        for (int i = 0; i < dof; i++)
+        {
+            joint_state_vec[i] = JointState->position[i];
+        }
+        for (int i = 0; i < dof; i++)
+        {
+            joint_state_vec[i + dof] = JointState->velocity[i];
+        }
     }
 
     void target_states_callback(const gazebo_msgs::ModelStates::ConstPtr &ModelState)
@@ -48,6 +44,14 @@ class MotionPlanner
                 target_pose.position.y = ModelState->pose[i].position.y;
                 target_pose.position.z = ModelState->pose[i].position.z;
                 target_pose.orientation = ModelState->pose[i].orientation;
+            }
+            if (ModelState->name[i] == "obstacle")
+            {
+
+                obstacle_pose.position.x = ModelState->pose[i].position.x;
+                obstacle_pose.position.y = ModelState->pose[i].position.y;
+                obstacle_pose.position.z = ModelState->pose[i].position.z;
+                obstacle_pose.orientation = ModelState->pose[i].orientation;
             }
         }
     }
@@ -78,17 +82,23 @@ class MotionPlanner
 
                 mpc->setEePosRef(pos_ref);
                 mpc->setEeOriRef(ori_ref);
+
+                Eigen::VectorXd pos_obs(3);
+                pos_obs << obstacle_pose.position.x, obstacle_pose.position.y, obstacle_pose.position.z;
+                Eigen::Quaterniond ori_obs(obstacle_pose.orientation.w, obstacle_pose.orientation.x,
+                                           obstacle_pose.orientation.y, obstacle_pose.orientation.z);
+
+                mpc->setEePosObs(pos_obs);
+                mpc->setEeOriObs(ori_obs);
+
                 mpc::cvec<num_states> x = joint_state_vec;
 
                 u = mpc->computeCommand(x);
                 cmd += u * dt;
 
-                // std::cout << "cmd: " << cmd.transpose() << std::endl;
-                // std::cout << "u: " << u.transpose() << std::endl;
-
                 std_msgs::Float64MultiArray cmd_msg;
 
-                for (int i = 0; i < 6; i++)
+                for (int i = 0; i < dof; i++)
                 {
                     cmd_msg.data.push_back(cmd[i]);
                 }
@@ -108,11 +118,12 @@ class MotionPlanner
     ros::Publisher joint_vel_command_pub;
     mpc::cvec<num_states> joint_state_vec;
 
-    Eigen::VectorXd u = Eigen::VectorXd::Zero(6);
-    Eigen::VectorXd cmd = Eigen::VectorXd::Zero(6);
+    Eigen::VectorXd u = Eigen::VectorXd::Zero(dof);
+    Eigen::VectorXd cmd = Eigen::VectorXd::Zero(dof);
 
     geometry_msgs::Pose target_pose;
-    float hz = 100; // 이거 반영해야 함
+    geometry_msgs::Pose obstacle_pose;
+    float hz = 100;
     boost::shared_ptr<nonlinear_mpc::NonlinearMPCInterface> mpc;
 };
 
