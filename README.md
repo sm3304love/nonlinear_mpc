@@ -25,6 +25,8 @@ rosrun nonlinear_mpc main
 ### Visual
 
 
+https://github.com/sm3304love/nonlinear_mpc/assets/57741032/24cc350f-eebf-4f5e-8f2b-de86288a64cb
+
 
 
 ### TO DO
