@@ -1,14 +1,14 @@
 # Notice
-The code in this repository is not working yet.
+The code in this repository is not complete yet.
 
 ## HOW TO USE
 ### Get simulation evironment
 ```
-git clone https://github.com/sm3304love/ur20_description.git
+[git clone https://github.com/sm3304love/ur20_description.git](https://github.com/sm3304love/mobile_ur20_description.git)
 ```
 ### Launch simulation
 ```
-roslaunch ur20_description velocity_sim.launch
+roslaunch mobile_ur20_description mobile_ur20.launch
 ```
 ### Run NMPC node
 ```
