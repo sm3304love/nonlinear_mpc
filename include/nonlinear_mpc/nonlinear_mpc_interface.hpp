@@ -22,6 +22,11 @@ class NonlinearMPCInterface
     virtual void setEeOriRef(const Eigen::Quaterniond &ori) = 0;
     virtual Eigen::Quaterniond getEeOriRef() const = 0;
 
+    virtual void setEePosObs(const Eigen::VectorXd &pos) = 0;
+    virtual Eigen::VectorXd getEePosObs() const = 0;
+    virtual void setEeOriObs(const Eigen::Quaterniond &ori) = 0;
+    virtual Eigen::Quaterniond getEeOriObs() const = 0;
+
   protected:
     NonlinearMPCInterface()
     {

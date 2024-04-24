@@ -5,7 +5,9 @@
 #include <chrono>
 #include <gazebo_msgs/ModelStates.h>
 #include <geometry_msgs/Pose.h>
+#include <geometry_msgs/Twist.h>
 #include <iostream>
+#include <nav_msgs/Odometry.h>
 #include <sensor_msgs/JointState.h>
 #include <std_msgs/Float64MultiArray.h>
 
@@ -15,8 +17,10 @@ class MotionPlanner
     MotionPlanner()
     {
         joint_vel_command_pub = nh_.advertise<std_msgs::Float64MultiArray>("/ur20/ur20_joint_controller/command", 10);
+        mobile_command_pub = nh_.advertise<geometry_msgs::Twist>("/cmd_vel", 10);
         joint_states_sub = nh_.subscribe("/ur20/joint_states", 10, &MotionPlanner::jointstatesCallback, this);
         target_state_sub = nh_.subscribe("/gazebo/model_states", 10, &MotionPlanner::target_states_callback, this);
+        odom_sub = nh_.subscribe("/odom", 10, &MotionPlanner::odomCallback, this);
     }
 
     void jointstatesCallback(const sensor_msgs::JointState::ConstPtr &JointState)
@@ -28,12 +32,6 @@ class MotionPlanner
         joint_state_vec[3] = JointState->position[3];
         joint_state_vec[4] = JointState->position[4];
         joint_state_vec[5] = JointState->position[5];
-        joint_state_vec[6] = JointState->velocity[2];
-        joint_state_vec[7] = JointState->velocity[1];
-        joint_state_vec[8] = JointState->velocity[0];
-        joint_state_vec[9] = JointState->velocity[3];
-        joint_state_vec[10] = JointState->velocity[4];
-        joint_state_vec[11] = JointState->velocity[5];
     }
 
     void target_states_callback(const gazebo_msgs::ModelStates::ConstPtr &ModelState)
@@ -49,7 +47,26 @@ class MotionPlanner
                 target_pose.position.z = ModelState->pose[i].position.z;
                 target_pose.orientation = ModelState->pose[i].orientation;
             }
+            if (ModelState->name[i] == "obstacle")
+            {
+
+                obstacle_pose.position.x = ModelState->pose[i].position.x;
+                obstacle_pose.position.y = ModelState->pose[i].position.y;
+                obstacle_pose.position.z = ModelState->pose[i].position.z;
+                obstacle_pose.orientation = ModelState->pose[i].orientation;
+            }
         }
+    }
+
+    void odomCallback(const nav_msgs::Odometry::ConstPtr &odom)
+    {
+        joint_state_vec[6] = odom->pose.pose.position.x;
+        joint_state_vec[7] = odom->pose.pose.position.y;
+        Eigen::Quaterniond q(odom->pose.pose.orientation.w, odom->pose.pose.orientation.x,
+                             odom->pose.pose.orientation.y, odom->pose.pose.orientation.z);
+        double yaw = atan2(2.0 * (q.w() * q.z() + q.x() * q.y()), 1.0 - 2.0 * (q.y() * q.y() + q.z() * q.z()));
+
+        joint_state_vec[8] = yaw;
     }
 
     void run()
@@ -78,26 +95,39 @@ class MotionPlanner
 
                 mpc->setEePosRef(pos_ref);
                 mpc->setEeOriRef(ori_ref);
+
+                Eigen::VectorXd pos_obs(3);
+                pos_obs << obstacle_pose.position.x, obstacle_pose.position.y, obstacle_pose.position.z;
+                Eigen::Quaterniond ori_obs(obstacle_pose.orientation.w, obstacle_pose.orientation.x,
+                                           obstacle_pose.orientation.y, obstacle_pose.orientation.z);
+
+                mpc->setEePosObs(pos_obs);
+                mpc->setEeOriObs(ori_obs);
+
                 mpc::cvec<num_states> x = joint_state_vec;
 
                 u = mpc->computeCommand(x);
-                cmd += u * dt;
 
-                // std::cout << "cmd: " << cmd.transpose() << std::endl;
-                // std::cout << "u: " << u.transpose() << std::endl;
+                std::cout << "u: " << u.transpose() << std::endl;
 
                 std_msgs::Float64MultiArray cmd_msg;
+                geometry_msgs::Twist cmd_msg_mobile;
 
                 for (int i = 0; i < 6; i++)
                 {
-                    cmd_msg.data.push_back(cmd[i]);
+                    cmd_msg.data.push_back(u[i]);
                 }
 
+                cmd_msg_mobile.linear.x = u[6];
+                cmd_msg_mobile.linear.y = u[7];
+                cmd_msg_mobile.angular.z = u[8];
+
                 joint_vel_command_pub.publish(cmd_msg);
+                mobile_command_pub.publish(cmd_msg_mobile);
             }
             count++;
             ros::spinOnce();
-            loop_rate.sleep();
+            // loop_rate.sleep();
         }
     }
 
@@ -105,14 +135,17 @@ class MotionPlanner
     ros::NodeHandle nh_;
     ros::Subscriber joint_states_sub;
     ros::Subscriber target_state_sub;
+    ros::Subscriber odom_sub;
     ros::Publisher joint_vel_command_pub;
+    ros::Publisher mobile_command_pub;
     mpc::cvec<num_states> joint_state_vec;
 
-    Eigen::VectorXd u = Eigen::VectorXd::Zero(6);
-    Eigen::VectorXd cmd = Eigen::VectorXd::Zero(6);
+    Eigen::VectorXd u = Eigen::VectorXd::Zero(num_inputs);
+    Eigen::VectorXd cmd = Eigen::VectorXd::Zero(num_inputs);
 
     geometry_msgs::Pose target_pose;
-    float hz = 100; // 이거 반영해야 함
+    geometry_msgs::Pose obstacle_pose;
+    float hz = 100;
     boost::shared_ptr<nonlinear_mpc::NonlinearMPCInterface> mpc;
 };
 
