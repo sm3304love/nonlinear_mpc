@@ -26,12 +26,12 @@ class MotionPlanner
     void jointstatesCallback(const sensor_msgs::JointState::ConstPtr &JointState)
     {
 
-        joint_state_vec[0] = JointState->position[2];
-        joint_state_vec[1] = JointState->position[1];
-        joint_state_vec[2] = JointState->position[0];
-        joint_state_vec[3] = JointState->position[3];
-        joint_state_vec[4] = JointState->position[4];
-        joint_state_vec[5] = JointState->position[5];
+        state_vec[0] = JointState->position[2];
+        state_vec[1] = JointState->position[1];
+        state_vec[2] = JointState->position[0];
+        state_vec[3] = JointState->position[3];
+        state_vec[4] = JointState->position[4];
+        state_vec[5] = JointState->position[5];
     }
 
     void target_states_callback(const gazebo_msgs::ModelStates::ConstPtr &ModelState)
@@ -60,13 +60,13 @@ class MotionPlanner
 
     void odomCallback(const nav_msgs::Odometry::ConstPtr &odom)
     {
-        joint_state_vec[6] = odom->pose.pose.position.x;
-        joint_state_vec[7] = odom->pose.pose.position.y;
+        state_vec[6] = odom->pose.pose.position.x;
+        state_vec[7] = odom->pose.pose.position.y;
         Eigen::Quaterniond q(odom->pose.pose.orientation.w, odom->pose.pose.orientation.x,
                              odom->pose.pose.orientation.y, odom->pose.pose.orientation.z);
         double yaw = atan2(2.0 * (q.w() * q.z() + q.x() * q.y()), 1.0 - 2.0 * (q.y() * q.y() + q.z() * q.z()));
 
-        joint_state_vec[8] = yaw;
+        state_vec[8] = yaw;
     }
 
     void run()
@@ -104,7 +104,7 @@ class MotionPlanner
                 mpc->setEePosObs(pos_obs);
                 mpc->setEeOriObs(ori_obs);
 
-                mpc::cvec<num_states> x = joint_state_vec;
+                mpc::cvec<num_states> x = state_vec;
 
                 u = mpc->computeCommand(x);
 
@@ -115,6 +115,7 @@ class MotionPlanner
 
                 for (int i = 0; i < 6; i++)
                 {
+
                     cmd_msg.data.push_back(u[i]);
                 }
 
@@ -127,7 +128,7 @@ class MotionPlanner
             }
             count++;
             ros::spinOnce();
-            // loop_rate.sleep();
+            loop_rate.sleep();
         }
     }
 
@@ -138,7 +139,7 @@ class MotionPlanner
     ros::Subscriber odom_sub;
     ros::Publisher joint_vel_command_pub;
     ros::Publisher mobile_command_pub;
-    mpc::cvec<num_states> joint_state_vec;
+    mpc::cvec<num_states> state_vec;
 
     Eigen::VectorXd u = Eigen::VectorXd::Zero(num_inputs);
     Eigen::VectorXd cmd = Eigen::VectorXd::Zero(num_inputs);

@@ -9,9 +9,10 @@ NonlinearMPC::NonlinearMPC()
 {
     Q_trans.diagonal() << 80, 80, 80;
     Q_ori.diagonal() << 30, 30, 30;
-    R.diagonal() << 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.8, 0.8, 0.8; // velocity weight?
-    Qf_trans.diagonal() << 160, 160, 160;
-    Qf_ori.diagonal() << 60, 60, 60;
+    R.diagonal() << 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02; // velocity weight?
+    Qf_trans.diagonal() << 80, 80, 80;
+    Qf_ori.diagonal() << 30, 30, 30;
+    Qf_vel.diagonal() << 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2;
     last_cmd.setZero();
 
     x_lb << -6.283185307179586, -6.283185307179586, -3.141592653589793, -6.283185307179586, -6.283185307179586,
@@ -26,15 +27,15 @@ NonlinearMPC::NonlinearMPC()
     V_arm_Ub << 2.0943951023931953, 2.0943951023931953, 2.6179938779914944, 3.6651914291880923, 3.6651914291880923,
         3.6651914291880923;
 
-    V_base_lb << -1, -1, -0.1;
-    V_base_Ub << 1, 1, 0.1;
+    V_base_lb << -0.5, -0.5, -0.5;
+    V_base_Ub << 0.5, 0.5, 0.5;
 
     urdf_filename = package_path + "/urdf/ur20.urdf";
 
     pinocchio::urdf::buildModel(urdf_filename, model);
     data = pinocchio::Data(model);
 
-    pinocchio::urdf::buildGeom(model, urdf_filename, pinocchio::COLLISION, geomModel); // mobile manipulator꺼로?
+    pinocchio::urdf::buildGeom(model, urdf_filename, pinocchio::COLLISION, geomModel);
     geomData = pinocchio::GeometryData(geomModel);
 
     obs = std::make_shared<hpp::fcl::CollisionObject>(std::make_shared<hpp::fcl::Sphere>(0.05));
@@ -70,7 +71,7 @@ bool NonlinearMPC::initialize(ros::NodeHandle &nh, double dt)
 
     // init state
     mpc::cvec<num_states> x0;
-    x0 << 0.0, -1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+    x0 << 0.0, -1.0, 1.0, -1.5708, -1.5708, 0.0, 0.0, 1.5708, 0.0;
 
     set_dynamics(x0);
 
@@ -80,7 +81,7 @@ bool NonlinearMPC::initialize(ros::NodeHandle &nh, double dt)
     ROS_INFO("MPC initial linearization");
 
     mpc::NLParameters params;
-    params.maximum_iteration = 100;
+    params.maximum_iteration = 30;
     params.relative_ftol = 1e-4;
     params.relative_xtol = 1e-6;
     params.hard_constraints = true;
@@ -105,6 +106,15 @@ mpc::cvec<num_inputs> NonlinearMPC::computeCommand(mpc::cvec<num_states> x)
     r = mpc_solver.step(x0, u0);
 
     last_cmd = r.cmd;
+
+    Eigen::VectorXd q = x.head(dof);
+
+    pinocchio::computeJointJacobians(model, data, q);
+    Eigen::MatrixXd J = data.J.topRows<6>();
+
+    double manipulability = sqrt((J * J.transpose()).determinant());
+
+    std::cout << "manipulability: " << manipulability << std::endl;
 
     return last_cmd;
 }
@@ -133,6 +143,8 @@ void NonlinearMPC::set_obj()
 
             Eigen::VectorXd pose_error = ee_pos - ee_pos_ref;
             Eigen::VectorXd ori_error = (ee_ori_ref * ee_ori.inverse()).vec();
+            double pose_cost = pose_error.transpose() * Q_trans * pose_error;
+            double ori_cost = ori_error.transpose() * Q_ori * ori_error;
 
             // Modified weight of input (velocity)
             Eigen::Affine3d T_w_arm;
@@ -140,18 +152,16 @@ void NonlinearMPC::set_obj()
 
             if ((T_w_arm.translation() - ee_pos_ref).norm() > 1.75)
             {
-                R.diagonal() << 10, 10, 10, 10, 10, 10, 0.5, 0.5, 0.5;
+                R.diagonal() << 10, 10, 10, 10, 10, 10, 0.2, 0.2, 0.2;
             }
             else
             {
-                R.diagonal() << 1, 1, 1, 1, 1, 1, 10, 10, 1;
+                R.diagonal() << 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 10, 10, 0.2;
             }
 
-            double pose_cost = pose_error.transpose() * Q_trans * pose_error;
-            double ori_cost = ori_error.transpose() * Q_ori * ori_error;
             double input_cost = u.row(i).dot(R * u.row(i).transpose());
 
-            cost += (pose_cost + ori_cost + input_cost);
+            cost += 0.5 * (pose_cost + ori_cost + input_cost);
         }
 
         // // final terminal cost
@@ -172,7 +182,12 @@ void NonlinearMPC::set_obj()
         Eigen::VectorXd pose_error_final = ee_pos_final - ee_pos_ref;
         Eigen::VectorXd ori_error_final = (ee_ori_ref * ee_ori_final.inverse()).vec();
 
-        cost += pose_error_final.dot(Qf_trans * pose_error_final) + ori_error_final.dot(Qf_ori * ori_error_final);
+        double final_vel_cost = u.row(pred_hor).dot(Qf_vel * u.row(pred_hor).transpose());
+        double final_pose_cost = pose_error_final.transpose() * Qf_trans * pose_error_final;
+        double final_ori_cost = ori_error_final.transpose() * Qf_ori * ori_error_final;
+
+        cost += 0.5 * (final_pose_cost + final_ori_cost + final_vel_cost);
+
         return cost;
     });
 }
@@ -231,9 +246,12 @@ void NonlinearMPC::set_constraints()
                 hpp::fcl::DistanceRequest arm_request;
                 hpp::fcl::DistanceResult arm_result;
                 hpp::fcl::distance(obs.get(), go_collision_object.get(), arm_request, arm_result);
-                in_con(index++) = -arm_result.min_distance + 0.1;
-            }
 
+                in_con(index++) = -arm_result.min_distance + 0.02;
+
+                if (arm_result.min_distance < 0.02)
+                    std::cout << "[" << j << "]" << "th link distance: " << arm_result.min_distance << std::endl;
+            }
             mobile_collision->setTranslation(hpp::fcl::Vec3f(x_base[0], x_base[1], 0.25));
             hpp::fcl::Quaternion3f quat_mobile(Eigen::AngleAxisd(x_base[2], Eigen::Vector3d::UnitZ()));
             mobile_collision->setRotation(quat_mobile.toRotationMatrix());
@@ -241,7 +259,7 @@ void NonlinearMPC::set_constraints()
             hpp::fcl::DistanceRequest mobile_request;
             hpp::fcl::DistanceResult mobile_result;
 
-            if (obs_pos(2) > 0.5)
+            if (obs_pos(2) > 0.02)
             {
                 mobile_result.min_distance = 100;
             }
@@ -255,70 +273,9 @@ void NonlinearMPC::set_constraints()
 
                 hpp::fcl::distance(obs_copy.get(), mobile_collision_copy.get(), mobile_request, mobile_result);
             }
-
-            in_con(index++) = -mobile_result.min_distance + 0.3;
-
-            for (size_t i = 1; i < geomModel.geometryObjects.size(); ++i)
-            {
-                for (size_t j = i + 1; j < geomModel.geometryObjects.size(); ++j)
-                {
-                    // Skip collision check between adjacent links
-                    if (model.parents[i] == j || model.parents[j] == i)
-                    {
-                        continue;
-                    }
-
-                    const pinocchio::GeometryObject &go1 = geomModel.geometryObjects[i];
-                    const pinocchio::GeometryObject &go2 = geomModel.geometryObjects[j];
-
-                    hpp::fcl::Transform3f transform1;
-                    transform1.setTranslation(hpp::fcl::Vec3f(geomData.oMg[i].translation()));
-                    transform1.setQuatRotation(hpp::fcl::Quaternion3f(geomData.oMg[i].rotation()));
-
-                    hpp::fcl::Transform3f transform2;
-                    transform2.setTranslation(hpp::fcl::Vec3f(geomData.oMg[j].translation()));
-                    transform2.setQuatRotation(hpp::fcl::Quaternion3f(geomData.oMg[j].rotation()));
-
-                    std::shared_ptr<hpp::fcl::CollisionObject> obj1(
-                        new hpp::fcl::CollisionObject(go1.geometry, transform1));
-                    std::shared_ptr<hpp::fcl::CollisionObject> obj2(
-                        new hpp::fcl::CollisionObject(go2.geometry, transform2));
-
-                    hpp::fcl::DistanceRequest arm_self_collision_request;
-                    hpp::fcl::DistanceResult arm_self_collision_result;
-                    hpp::fcl::distance(obj1.get(), obj2.get(), arm_self_collision_request, arm_self_collision_result);
-
-                    in_con(index++) = -arm_self_collision_result.min_distance + 0.0;
-                }
-            }
-
-            // for (size_t i = 2; i < geomModel.geometryObjects.size(); ++i)
-            // {
-
-            //     const pinocchio::GeometryObject &go1 = geomModel.geometryObjects[i];
-            //     hpp::fcl::Transform3f arm_transform;
-            //     arm_transform.setTranslation(hpp::fcl::Vec3f(geomData.oMg[i].translation()));
-            //     arm_transform.setQuatRotation(hpp::fcl::Quaternion3f(geomData.oMg[i].rotation()));
-
-            //     hpp::fcl::Transform3f world_base_transform;
-            //     world_base_transform.setTranslation(hpp::fcl::Vec3f(x_base[0], x_base[1], 0.5));
-            //     world_base_transform.setQuatRotation(
-            //         hpp::fcl::Quaternion3f(Eigen::AngleAxisd(x_base[2], Eigen::Vector3d::UnitZ())));
-
-            //     hpp::fcl::Transform3f world_transform = world_base_transform * arm_transform;
-
-            //     std::shared_ptr<hpp::fcl::CollisionObject> obj1(
-            //         new hpp::fcl::CollisionObject(go1.geometry, world_transform));
-
-            //     hpp::fcl::DistanceRequest arm_mobile_request;
-            //     hpp::fcl::DistanceResult arm_mobile_result;
-
-            //     hpp::fcl::distance(obj1.get(), mobile_collision.get(), arm_mobile_request, arm_mobile_result);
-
-            //     in_con(index++) = -arm_mobile_result.min_distance + 0.1;
-            //     std::cout << "distance between " << go1.name << " and mobile: " << arm_mobile_result.min_distance
-            //               << std::endl;
-            // }
+            in_con(index++) = -mobile_result.min_distance + 0.1;
+            if (mobile_result.min_distance < 0.1)
+                std::cout << "mobile distance: " << mobile_result.min_distance << std::endl;
         }
     });
 }
