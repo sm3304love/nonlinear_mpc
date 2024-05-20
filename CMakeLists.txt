@@ -46,3 +46,7 @@ target_link_libraries(${PROJECT_NAME} mpc++ pinocchio::pinocchio)
 add_executable(main src/main.cpp)
 target_link_libraries(main ${catkin_LIBRARIES} pinocchio::pinocchio mpc++)
 
+
+add_executable(main_sim src/main_sim.cpp)
+target_link_libraries(main_sim ${catkin_LIBRARIES} pinocchio::pinocchio mpc++)
+

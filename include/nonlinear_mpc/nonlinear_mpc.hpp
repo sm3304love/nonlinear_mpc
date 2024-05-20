@@ -78,7 +78,7 @@ class NonlinearMPC : public NonlinearMPCInterface
     std::string urdf_filename;
     int frame_id;
 
-    std::string package_path = ros::package::getPath("ur20_description");
+    std::string package_path = ros::package::getPath("mobile_ur20_description");
 
     Eigen::VectorXd x_lb = Eigen::VectorXd::Zero(num_states);
     Eigen::VectorXd x_Ub = Eigen::VectorXd::Zero(num_states);

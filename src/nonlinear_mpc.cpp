@@ -10,6 +10,7 @@ NonlinearMPC::NonlinearMPC()
     Q_trans.diagonal() << 80, 80, 80;
     Q_ori.diagonal() << 30, 30, 30;
     R.diagonal() << 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02; // velocity weight?
+    R.diagonal() << 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2;
     Qf_trans.diagonal() << 80, 80, 80;
     Qf_ori.diagonal() << 30, 30, 30;
     Qf_vel.diagonal() << 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2;
@@ -72,6 +73,7 @@ bool NonlinearMPC::initialize(ros::NodeHandle &nh, double dt)
     // init state
     mpc::cvec<num_states> x0;
     x0 << 0.0, -1.0, 1.0, -1.5708, -1.5708, 0.0, 0.0, 1.5708, 0.0;
+    x0 << 0.0, -1.0, 1.0, -1.5708, -1.5708, 0.0, 0.0, 0.0, 0.0;
 
     set_dynamics(x0);
 
@@ -84,7 +86,7 @@ bool NonlinearMPC::initialize(ros::NodeHandle &nh, double dt)
     params.maximum_iteration = 30;
     params.relative_ftol = 1e-4;
     params.relative_xtol = 1e-6;
-    params.hard_constraints = true;
+    params.hard_constraints = false;
 
     mpc_solver.setOptimizerParameters(params);
 
@@ -123,7 +125,7 @@ void NonlinearMPC::set_obj()
 {
     mpc_solver.setObjectiveFunction([&](const mpc::mat<pred_hor + 1, num_states> &x,
                                         const mpc::mat<pred_hor + 1, num_outputs> &,
-                                        const mpc::mat<pred_hor + 1, num_inputs> &u, const double &) {
+                                        const mpc::mat<pred_hor + 1, num_inputs> &u, const double &slack) {
         double cost = 0;
         for (int i = 0; i < pred_hor; i++)
         {
@@ -186,7 +188,9 @@ void NonlinearMPC::set_obj()
         double final_pose_cost = pose_error_final.transpose() * Qf_trans * pose_error_final;
         double final_ori_cost = ori_error_final.transpose() * Qf_ori * ori_error_final;
 
-        cost += 0.5 * (final_pose_cost + final_ori_cost + final_vel_cost);
+        std::cout << "slack : " << slack << std::endl;
+
+        cost += 0.5 * (final_pose_cost + final_ori_cost + final_vel_cost) + slack + 0.5 * slack * slack;
 
         return cost;
     });
@@ -196,7 +200,7 @@ void NonlinearMPC::set_constraints()
 {
     mpc_solver.setIneqConFunction([&](mpc::cvec<ineq_c> &in_con, const mpc::mat<pred_hor + 1, num_states> &x,
                                       const mpc::mat<pred_hor + 1, num_outputs> &,
-                                      const mpc::mat<pred_hor + 1, num_inputs> &u, const double &) {
+                                      const mpc::mat<pred_hor + 1, num_inputs> &u, const double &slack) {
         int index = 0;
 
         obs_transform.setTranslation(hpp::fcl::Vec3f(obs_pos(0), obs_pos(1), obs_pos(2)));
@@ -205,6 +209,7 @@ void NonlinearMPC::set_constraints()
 
         for (int i = 0; i < pred_hor + 1; i++)
         {
+            in_con(index++) = 0 - slack; // 0 <= slack
 
             for (size_t j = 0; j < dof; j++)
             {
@@ -227,6 +232,8 @@ void NonlinearMPC::set_constraints()
 
             pinocchio::updateGeometryPlacements(model, data, geomModel, geomData, q);
 
+            double min_distance = std::numeric_limits<double>::max();
+
             for (int j = 0; j < num_arm_links; j++)
             {
                 const pinocchio::GeometryObject &go = geomModel.geometryObjects[j];
@@ -247,10 +254,10 @@ void NonlinearMPC::set_constraints()
                 hpp::fcl::DistanceResult arm_result;
                 hpp::fcl::distance(obs.get(), go_collision_object.get(), arm_request, arm_result);
 
-                in_con(index++) = -arm_result.min_distance + 0.02;
-
-                if (arm_result.min_distance < 0.02)
-                    std::cout << "[" << j << "]" << "th link distance: " << arm_result.min_distance << std::endl;
+                if (arm_result.min_distance < min_distance)
+                {
+                    min_distance = arm_result.min_distance;
+                }
             }
             mobile_collision->setTranslation(hpp::fcl::Vec3f(x_base[0], x_base[1], 0.25));
             hpp::fcl::Quaternion3f quat_mobile(Eigen::AngleAxisd(x_base[2], Eigen::Vector3d::UnitZ()));
@@ -273,9 +280,12 @@ void NonlinearMPC::set_constraints()
 
                 hpp::fcl::distance(obs_copy.get(), mobile_collision_copy.get(), mobile_request, mobile_result);
             }
-            in_con(index++) = -mobile_result.min_distance + 0.1;
-            if (mobile_result.min_distance < 0.1)
-                std::cout << "mobile distance: " << mobile_result.min_distance << std::endl;
+            if (mobile_result.min_distance < min_distance)
+            {
+                min_distance = mobile_result.min_distance;
+            }
+
+            in_con(index++) = -min_distance + 0.1 + slack;
         }
     });
 }
