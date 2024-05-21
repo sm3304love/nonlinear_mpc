@@ -45,7 +45,7 @@ class MotionPlanner
         T_w_b = Eigen::Affine3d::Identity();
         T_b_arm = Eigen::Affine3d::Identity();
         T_b_arm.translation() << 0.0, 0.0, 0.5;
-        state_vec_sim << 0.0, -1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+        state_vec_sim << 0.0, -1.0, 1.0, -1.5708, -1.5708, 0.0, 0.0, 0.0, 0.0;
     }
 
     void jointstatesCallback(const sensor_msgs::JointState::ConstPtr &JointState)
@@ -132,13 +132,11 @@ class MotionPlanner
                 Eigen::Quaterniond ori_obs(obstacle_pose.orientation.w, obstacle_pose.orientation.x,
                                            obstacle_pose.orientation.y, obstacle_pose.orientation.z);
 
-                //
-                pos_obs << -1.1951199769973755, 0.47176215052604675, 1.301445484161377;
-                ori_obs.w() = 1.0;
-                ori_obs.x() = 0.0;
-                ori_obs.y() = 0.0;
-                ori_obs.z() = 0.0;
-                //
+                // pos_obs << -1.1951199769973755, 0.47176215052604675, 1.301445484161377;
+                // ori_obs.w() = 1.0;
+                // ori_obs.x() = 0.0;
+                // ori_obs.y() = 0.0;
+                // ori_obs.z() = 0.0;
 
                 mpc->setEePosObs(pos_obs);
                 mpc->setEeOriObs(ori_obs);
@@ -154,7 +152,7 @@ class MotionPlanner
 
                 state_vec_sim += dx * dt;
 
-                std::cout << "state : " << state_vec_sim.transpose() << std::endl;
+                // std::cout << "state : " << state_vec_sim.transpose() << std::endl;
 
                 Eigen::VectorXd q = state_vec_sim.head(6);
                 Eigen::VectorXd q_b = state_vec_sim.tail(3);
@@ -215,19 +213,19 @@ class MotionPlanner
                 // Calculate the orientation difference
                 Eigen::Quaterniond ori_diff = ori_ref * ee_ori.inverse();
 
-                // 위치 차이 출력
-                std::cout << "Position Difference:" << std::endl;
-                std::cout << "x: " << pos_diff(0) << std::endl;
-                std::cout << "y: " << pos_diff(1) << std::endl;
-                std::cout << "z: " << pos_diff(2) << std::endl;
+                // // 위치 차이 출력
+                // std::cout << "Position Difference:" << std::endl;
+                // std::cout << "x: " << pos_diff(0) << std::endl;
+                // std::cout << "y: " << pos_diff(1) << std::endl;
+                // std::cout << "z: " << pos_diff(2) << std::endl;
 
-                // 쿼터니언 차이 출력
-                std::cout << "Orientation Difference:" << std::endl;
-                std::cout << "w: " << ori_diff.w() << std::endl;
-                std::cout << "x: " << ori_diff.x() << std::endl;
-                std::cout << "y: " << ori_diff.y() << std::endl;
-                std::cout << "z: " << ori_diff.z() << std::endl;
-            }
+                // // 쿼터니언 차이 출력
+                // std::cout << "Orientation Difference:" << std::endl;
+                // std::cout << "w: " << ori_diff.w() << std::endl;
+                // std::cout << "x: " << ori_diff.x() << std::endl;
+                // std::cout << "y: " << ori_diff.y() << std::endl;
+                // std::cout << "z: " << ori_diff.z() << std::endl;
+                        }
             count++;
             ros::spinOnce();
             loop_rate.sleep();

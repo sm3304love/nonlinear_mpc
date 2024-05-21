@@ -9,7 +9,6 @@ NonlinearMPC::NonlinearMPC()
 {
     Q_trans.diagonal() << 80, 80, 80;
     Q_ori.diagonal() << 30, 30, 30;
-    R.diagonal() << 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02; // velocity weight?
     R.diagonal() << 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2;
     Qf_trans.diagonal() << 80, 80, 80;
     Qf_ori.diagonal() << 30, 30, 30;
@@ -28,8 +27,8 @@ NonlinearMPC::NonlinearMPC()
     V_arm_Ub << 2.0943951023931953, 2.0943951023931953, 2.6179938779914944, 3.6651914291880923, 3.6651914291880923,
         3.6651914291880923;
 
-    V_base_lb << -0.5, -0.5, -0.5;
-    V_base_Ub << 0.5, 0.5, 0.5;
+    V_base_lb << -0.2, -0.2, -0.25;
+    V_base_Ub << 0.2, 0.2, 0.25;
 
     urdf_filename = package_path + "/urdf/ur20.urdf";
 
@@ -39,7 +38,7 @@ NonlinearMPC::NonlinearMPC()
     pinocchio::urdf::buildGeom(model, urdf_filename, pinocchio::COLLISION, geomModel);
     geomData = pinocchio::GeometryData(geomModel);
 
-    obs = std::make_shared<hpp::fcl::CollisionObject>(std::make_shared<hpp::fcl::Sphere>(0.05));
+    obs = std::make_shared<hpp::fcl::CollisionObject>(std::make_shared<hpp::fcl::Box>(0.1, 0.1, 0.1));
     mobile_collision = std::make_shared<hpp::fcl::CollisionObject>(std::make_shared<hpp::fcl::Box>(1.0, 1.0, 0.5));
 
     frame_id = model.getFrameId("tool0");
@@ -72,7 +71,6 @@ bool NonlinearMPC::initialize(ros::NodeHandle &nh, double dt)
 
     // init state
     mpc::cvec<num_states> x0;
-    x0 << 0.0, -1.0, 1.0, -1.5708, -1.5708, 0.0, 0.0, 1.5708, 0.0;
     x0 << 0.0, -1.0, 1.0, -1.5708, -1.5708, 0.0, 0.0, 0.0, 0.0;
 
     set_dynamics(x0);
@@ -83,7 +81,7 @@ bool NonlinearMPC::initialize(ros::NodeHandle &nh, double dt)
     ROS_INFO("MPC initial linearization");
 
     mpc::NLParameters params;
-    params.maximum_iteration = 30;
+    params.maximum_iteration = 100;
     params.relative_ftol = 1e-4;
     params.relative_xtol = 1e-6;
     params.hard_constraints = false;
@@ -107,16 +105,13 @@ mpc::cvec<num_inputs> NonlinearMPC::computeCommand(mpc::cvec<num_states> x)
 
     r = mpc_solver.step(x0, u0);
 
-    last_cmd = r.cmd;
-
-    Eigen::VectorXd q = x.head(dof);
-
+    Eigen::VectorXd q = x0.head(dof);
     pinocchio::computeJointJacobians(model, data, q);
     Eigen::MatrixXd J = data.J.topRows<6>();
-
     double manipulability = sqrt((J * J.transpose()).determinant());
+    std::cout << "manipulability : " << manipulability << std::endl;
 
-    std::cout << "manipulability: " << manipulability << std::endl;
+    last_cmd = r.cmd;
 
     return last_cmd;
 }
@@ -163,7 +158,7 @@ void NonlinearMPC::set_obj()
 
             double input_cost = u.row(i).dot(R * u.row(i).transpose());
 
-            cost += 0.5 * (pose_cost + ori_cost + input_cost);
+            cost += 0.5 * (pose_cost + ori_cost + input_cost) + 100 * slack + 0.5 * slack * slack;
         }
 
         // // final terminal cost
@@ -188,9 +183,9 @@ void NonlinearMPC::set_obj()
         double final_pose_cost = pose_error_final.transpose() * Qf_trans * pose_error_final;
         double final_ori_cost = ori_error_final.transpose() * Qf_ori * ori_error_final;
 
-        std::cout << "slack : " << slack << std::endl;
+        // std::cout << "slack : " << slack << std::endl; // weight?
 
-        cost += 0.5 * (final_pose_cost + final_ori_cost + final_vel_cost) + slack + 0.5 * slack * slack;
+        cost += 0.5 * (final_pose_cost + final_ori_cost + final_vel_cost);
 
         return cost;
     });
@@ -232,8 +227,6 @@ void NonlinearMPC::set_constraints()
 
             pinocchio::updateGeometryPlacements(model, data, geomModel, geomData, q);
 
-            double min_distance = std::numeric_limits<double>::max();
-
             for (int j = 0; j < num_arm_links; j++)
             {
                 const pinocchio::GeometryObject &go = geomModel.geometryObjects[j];
@@ -253,11 +246,7 @@ void NonlinearMPC::set_constraints()
                 hpp::fcl::DistanceRequest arm_request;
                 hpp::fcl::DistanceResult arm_result;
                 hpp::fcl::distance(obs.get(), go_collision_object.get(), arm_request, arm_result);
-
-                if (arm_result.min_distance < min_distance)
-                {
-                    min_distance = arm_result.min_distance;
-                }
+                in_con(index++) = -arm_result.min_distance + 0.1 - slack;
             }
             mobile_collision->setTranslation(hpp::fcl::Vec3f(x_base[0], x_base[1], 0.25));
             hpp::fcl::Quaternion3f quat_mobile(Eigen::AngleAxisd(x_base[2], Eigen::Vector3d::UnitZ()));
@@ -266,7 +255,7 @@ void NonlinearMPC::set_constraints()
             hpp::fcl::DistanceRequest mobile_request;
             hpp::fcl::DistanceResult mobile_result;
 
-            if (obs_pos(2) > 0.02)
+            if (obs_pos(2) > 0.5)
             {
                 mobile_result.min_distance = 100;
             }
@@ -280,12 +269,15 @@ void NonlinearMPC::set_constraints()
 
                 hpp::fcl::distance(obs_copy.get(), mobile_collision_copy.get(), mobile_request, mobile_result);
             }
-            if (mobile_result.min_distance < min_distance)
-            {
-                min_distance = mobile_result.min_distance;
-            }
 
-            in_con(index++) = -min_distance + 0.1 + slack;
+            in_con(index++) = -mobile_result.min_distance + 0.3 - slack;
+
+            // pinocchio::computeJointJacobians(model, data, q);
+            // Eigen::MatrixXd J = data.J.topRows<6>();
+
+            // double manipulability = sqrt((J * J.transpose()).determinant());
+
+            // in_con(index++) = -manipulability + 0.01 - slack;
         }
     });
 }
