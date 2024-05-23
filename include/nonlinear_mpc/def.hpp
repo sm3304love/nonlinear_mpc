@@ -17,6 +17,6 @@ static constexpr int pred_hor = std::ceil(TIME_HORIZON / SAMPLE_TIME);
 static constexpr int ctrl_hor = pred_hor;
 
 // constexpr int ineq_c = (pred_hor + 1) * (2 * num_inputs + 2 * num_states);
-constexpr int ineq_c = (pred_hor + 1) * (2 * num_inputs + 2 * num_states + collision_link);
+constexpr int ineq_c = (pred_hor + 1) * (2 * num_inputs + 2 * num_states + collision_link + 1);
 
 constexpr int eq_c = 0;

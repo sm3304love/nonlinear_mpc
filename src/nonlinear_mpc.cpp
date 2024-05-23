@@ -8,11 +8,11 @@ namespace nonlinear_mpc
 NonlinearMPC::NonlinearMPC()
 {
     Q_trans.diagonal() << 160, 160, 160;
-    Q_ori.diagonal() << 100, 100, 100;
+    Q_ori.diagonal() << 60, 60, 60;
     Q_vel.diagonal() << 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5;
     R.diagonal() << 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1;
     Qf_trans.diagonal() << 320, 320, 320;
-    Qf_ori.diagonal() << 200, 200, 200;
+    Qf_ori.diagonal() << 120, 120, 120;
 
     last_cmd.setZero();
 
@@ -68,10 +68,10 @@ bool NonlinearMPC::initialize(ros::NodeHandle &nh, double dt)
     ROS_INFO("MPC initial linearization");
 
     mpc::NLParameters params;
-    // params.maximum_iteration = 150;
+    params.maximum_iteration = 150;
     params.relative_ftol = 1e-5;
     params.relative_xtol = 1e-6;
-    // params.hard_constraints = true;
+    params.hard_constraints = false;
 
     mpc_solver.setOptimizerParameters(params);
 
@@ -101,7 +101,7 @@ void NonlinearMPC::set_obj()
 {
     mpc_solver.setObjectiveFunction([&](const mpc::mat<pred_hor + 1, num_states> &x,
                                         const mpc::mat<pred_hor + 1, num_outputs> &,
-                                        const mpc::mat<pred_hor + 1, num_inputs> &u, const double &) {
+                                        const mpc::mat<pred_hor + 1, num_inputs> &u, const double &slack) {
         double cost = 0;
 
         for (int i = 0; i < pred_hor; i++) // inf?
@@ -122,6 +122,7 @@ void NonlinearMPC::set_obj()
             double input_cost = u.row(i).dot(R * u.row(i).transpose());
 
             cost += (pose_cost + ori_cost + vel_cost + input_cost);
+            // std::cout << "slack : " << slack << std::endl;
         }
 
         // // final terminal cost
@@ -136,7 +137,8 @@ void NonlinearMPC::set_obj()
         Eigen::VectorXd pose_error_final = ee_pos_final - ee_pos_ref;
         Eigen::VectorXd ori_error_final = (ee_ori_ref * ee_ori_final.inverse()).vec();
 
-        cost += pose_error_final.dot(Qf_trans * pose_error_final) + ori_error_final.dot(Qf_ori * ori_error_final);
+        cost += pose_error_final.dot(Qf_trans * pose_error_final) + ori_error_final.dot(Qf_ori * ori_error_final) +
+                100 * slack + 0.5 * slack * slack;
         return cost;
     });
 }
@@ -145,7 +147,7 @@ void NonlinearMPC::set_constraints()
 {
     mpc_solver.setIneqConFunction([&](mpc::cvec<ineq_c> &in_con, const mpc::mat<pred_hor + 1, num_states> &x,
                                       const mpc::mat<pred_hor + 1, num_outputs> &,
-                                      const mpc::mat<pred_hor + 1, num_inputs> &u, const double &) {
+                                      const mpc::mat<pred_hor + 1, num_inputs> &u, const double &slack) {
         int index = 0;
 
         obs_transform.setTranslation(hpp::fcl::Vec3f(obs_pos(0), obs_pos(1), obs_pos(2)));
@@ -154,6 +156,7 @@ void NonlinearMPC::set_constraints()
 
         for (int i = 0; i < pred_hor + 1; i++)
         {
+            in_con(index++) = 0 - slack; // x = 0
             for (size_t j = 0; j < num_inputs; j++)
             {
                 in_con(index++) = u(i, j) - 5.0;  // u <= u_max
@@ -180,7 +183,7 @@ void NonlinearMPC::set_constraints()
                 hpp::fcl::DistanceRequest request;
                 hpp::fcl::DistanceResult result;
                 hpp::fcl::distance(obs.get(), go_collision_object.get(), request, result);
-                in_con(index++) = -result.min_distance + 0.05;
+                in_con(index++) = -result.min_distance + 0.05 - slack;
             }
         }
     });
