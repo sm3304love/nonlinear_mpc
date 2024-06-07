@@ -49,7 +49,7 @@ void NonlinearMPC::set_dynamics(const mpc::cvec<num_states> &x)
 bool NonlinearMPC::initialize(ros::NodeHandle &nh, double dt)
 {
     ts = dt;
-    mpc_solver.setContinuosTimeModel(ts);
+    mpc_solver.setDiscretizationSamplingTime(ts);
     mpc_solver.setLoggerLevel(mpc::Logger::log_level::NORMAL);
     mpc_solver.setLoggerPrefix("ROBOT");
     ROS_INFO("MPC initial setup");
@@ -87,9 +87,7 @@ mpc::cvec<num_inputs> NonlinearMPC::computeCommand(mpc::cvec<num_states> x) // w
 
     mpc::Result<num_inputs> r;
 
-    r = mpc_solver.step(x0, u0);
-
-    // std::cout << mpc_solver.getExecutionStats();
+    r = mpc_solver.optimize(x0, u0);
 
     last_cmd = r.cmd;
 
