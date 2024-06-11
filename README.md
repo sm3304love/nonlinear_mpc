@@ -8,7 +8,7 @@ This algorithm plans the motion of UR20 based on Nonlinear Model Predictive Cont
 ## Dependancies
 * [UR20 gazebo simulation environment](https://github.com/sm3304love/ur20_description)
 * ROS Noetic
-* [libmpc](https://github.com/nicolapiccinelli/libmpc) <= 0.5.0
+* [libmpc](https://github.com/nicolapiccinelli/libmpc) (0.5.0)
 * Pinocchio 
 
 ## HOW TO USE
