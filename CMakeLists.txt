@@ -41,8 +41,8 @@ include_directories(
 add_library(${PROJECT_NAME} src/nonlinear_mpc.cpp)
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20 )
 add_dependencies(${PROJECT_NAME} mpc++ ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS} osqp)
-target_link_libraries(${PROJECT_NAME} mpc++ pinocchio::pinocchio) 
+target_link_libraries(${PROJECT_NAME} mpc++ pinocchio::pinocchio ) 
 
-add_executable(main src/main.cpp)
-target_link_libraries(main ${catkin_LIBRARIES} pinocchio::pinocchio mpc++)
+add_executable(franka_main src/main.cpp)
+target_link_libraries(franka_main ${catkin_LIBRARIES} pinocchio::pinocchio mpc++ )
 

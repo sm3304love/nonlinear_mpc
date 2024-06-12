@@ -19,7 +19,6 @@
 #include <nonlinear_mpc/nonlinear_mpc_interface.hpp>
 #include <ros/package.h>
 #include <std_msgs/Float64MultiArray.h>
-
 namespace nonlinear_mpc
 {
 
@@ -63,10 +62,10 @@ class NonlinearMPC : public NonlinearMPCInterface
 
     mpc::NLMPC<num_states, num_inputs, num_outputs, pred_hor, ctrl_hor, ineq_c, eq_c> mpc_solver;
 
-    Eigen::VectorXd ee_pos_ref = Eigen::VectorXd::Zero(3);
+    Eigen::Vector3d ee_pos_ref = Eigen::Vector3d::Zero();
     Eigen::Quaterniond ee_ori_ref = Eigen::Quaterniond::Identity();
 
-    Eigen::VectorXd obs_pos = Eigen::VectorXd::Zero(3);
+    Eigen::Vector3d obs_pos = Eigen::Vector3d::Zero();
     Eigen::Quaterniond obs_ori = Eigen::Quaterniond::Identity();
 
     // mpc::Result<num_inputs> r_before;

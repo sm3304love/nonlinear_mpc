@@ -1,3 +1,4 @@
+#include <chrono>
 #include <nonlinear_mpc/nonlinear_mpc.hpp>
 #include <pluginlib/class_list_macros.h>
 
@@ -7,12 +8,13 @@ namespace nonlinear_mpc
 {
 NonlinearMPC::NonlinearMPC()
 {
-    Q_trans.diagonal() << 160, 160, 160;
-    Q_ori.diagonal() << 60, 60, 60;
-    Q_vel.diagonal() << 2.5, 2.5, 2.5, 2.5, 2.5, 2.5, 2.5;
-    R.diagonal() << 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1;
-    Qf_trans.diagonal() << 320, 320, 320;
-    Qf_ori.diagonal() << 120, 120, 120;
+
+    Q_trans.diagonal() << 800, 800, 800;
+    Q_ori.diagonal() << 300, 300, 300;
+    Q_vel.diagonal() << 10, 10, 10, 10, 10, 10, 10;
+    R.diagonal() << 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01;
+    Qf_trans.diagonal() << 1600, 1600, 1600;
+    Qf_ori.diagonal() << 600, 600, 600;
 
     last_cmd.setZero();
 
@@ -29,7 +31,7 @@ NonlinearMPC::NonlinearMPC()
     pinocchio::urdf::buildGeom(model, urdf_filename, pinocchio::COLLISION, geomModel);
     geomData = pinocchio::GeometryData(geomModel);
 
-    obs = std::make_shared<hpp::fcl::CollisionObject>(std::make_shared<hpp::fcl::Sphere>(0.05));
+    obs = std::make_shared<hpp::fcl::CollisionObject>(std::make_shared<hpp::fcl::Box>(0.1, 0.1, 0.1));
 
     frame_id = model.getFrameId("panda_link8"); // end effector frame
 }
@@ -51,8 +53,9 @@ void NonlinearMPC::set_dynamics(const mpc::cvec<num_states> &x)
 
 bool NonlinearMPC::initialize(ros::NodeHandle &nh, double dt)
 {
+
     ts = dt;
-    mpc_solver.setContinuosTimeModel(ts);
+    mpc_solver.setDiscretizationSamplingTime(ts);
     mpc_solver.setLoggerLevel(mpc::Logger::log_level::NORMAL);
     mpc_solver.setLoggerPrefix("ROBOT");
     ROS_INFO("MPC initial setup");
@@ -68,7 +71,7 @@ bool NonlinearMPC::initialize(ros::NodeHandle &nh, double dt)
     ROS_INFO("MPC initial linearization");
 
     mpc::NLParameters params;
-    params.maximum_iteration = 150;
+    params.maximum_iteration = 100;
     params.relative_ftol = 1e-5;
     params.relative_xtol = 1e-6;
     params.hard_constraints = false;
@@ -80,7 +83,7 @@ bool NonlinearMPC::initialize(ros::NodeHandle &nh, double dt)
     return true;
 }
 
-mpc::cvec<num_inputs> NonlinearMPC::computeCommand(mpc::cvec<num_states> x) // was problem
+mpc::cvec<num_inputs> NonlinearMPC::computeCommand(mpc::cvec<num_states> x)
 {
     mpc::cvec<num_states> x0;
     mpc::cvec<num_inputs> u0;
@@ -90,7 +93,7 @@ mpc::cvec<num_inputs> NonlinearMPC::computeCommand(mpc::cvec<num_states> x) // w
 
     mpc::Result<num_inputs> r;
 
-    r = mpc_solver.step(x0, u0);
+    r = mpc_solver.optimize(x0, u0);
 
     last_cmd = r.cmd;
 
@@ -104,7 +107,7 @@ void NonlinearMPC::set_obj()
                                         const mpc::mat<pred_hor + 1, num_inputs> &u, const double &slack) {
         double cost = 0;
 
-        for (int i = 0; i < pred_hor; i++) // inf?
+        for (int i = 0; i < pred_hor; i++)
         {
             Eigen::VectorXd q = x.row(i).head(dof);
             Eigen::VectorXd q_dot = x.row(i).tail(dof);
@@ -121,8 +124,43 @@ void NonlinearMPC::set_obj()
             double vel_cost = q_dot.transpose() * Q_vel * q_dot;
             double input_cost = u.row(i).dot(R * u.row(i).transpose());
 
-            cost += (pose_cost + ori_cost + vel_cost + input_cost);
-            // std::cout << "slack : " << slack << std::endl;
+            pinocchio::updateGeometryPlacements(model, data, geomModel, geomData, q);
+
+            obs_transform.setTranslation(hpp::fcl::Vec3f(obs_pos(0), obs_pos(1), obs_pos(2)));
+            obs_transform.setQuatRotation(hpp::fcl::Quaternion3f(obs_ori.w(), obs_ori.x(), obs_ori.y(), obs_ori.z()));
+            obs->setTransform(obs_transform);
+
+            Eigen::VectorXd min_distance(1);
+            min_distance(0) = 1000; // 초기 거리값 설정
+
+            // 감지되는 장애물 갯수에 따라 cost를 계산하는 기능 추가 필요
+            for (int j = 0; j < num_arm_links; j++)
+            {
+                const pinocchio::GeometryObject &go = geomModel.geometryObjects[j];
+                hpp::fcl::Transform3f arm_transform;
+                arm_transform.setTranslation(hpp::fcl::Vec3f(geomData.oMg[j].translation()));
+                arm_transform.setQuatRotation(hpp::fcl::Quaternion3f(geomData.oMg[j].rotation()));
+
+                auto arm_collision = std::make_shared<hpp::fcl::CollisionObject>(go.geometry, arm_transform);
+
+                hpp::fcl::DistanceRequest arm_request;
+                hpp::fcl::DistanceResult arm_result;
+                hpp::fcl::distance(obs.get(), arm_collision.get(), arm_request, arm_result);
+
+                if (arm_result.min_distance < min_distance(0))
+                {
+                    min_distance(0) = arm_result.min_distance;
+                }
+            }
+
+            Eigen::VectorXd min_distance_exp(1);
+            min_distance_exp(0) = exp(-100 * min_distance(0));
+
+            Eigen::MatrixXd Q_collision = Eigen::MatrixXd::Identity(1, 1);
+            Q_collision(0, 0) = 100;
+            double collision_cost = min_distance_exp.transpose() * Q_collision * min_distance_exp;
+
+            cost += (pose_cost + ori_cost + vel_cost + input_cost + collision_cost);
         }
 
         // // final terminal cost
@@ -138,21 +176,18 @@ void NonlinearMPC::set_obj()
         Eigen::VectorXd ori_error_final = (ee_ori_ref * ee_ori_final.inverse()).vec();
 
         cost += pose_error_final.dot(Qf_trans * pose_error_final) + ori_error_final.dot(Qf_ori * ori_error_final) +
-                100 * slack + 0.5 * slack * slack;
+                100 * slack + 100 * slack * slack;
         return cost;
     });
 }
 
 void NonlinearMPC::set_constraints()
 {
+
     mpc_solver.setIneqConFunction([&](mpc::cvec<ineq_c> &in_con, const mpc::mat<pred_hor + 1, num_states> &x,
                                       const mpc::mat<pred_hor + 1, num_outputs> &,
                                       const mpc::mat<pred_hor + 1, num_inputs> &u, const double &slack) {
         int index = 0;
-
-        obs_transform.setTranslation(hpp::fcl::Vec3f(obs_pos(0), obs_pos(1), obs_pos(2)));
-        obs_transform.setQuatRotation(hpp::fcl::Quaternion3f(obs_ori.w(), obs_ori.x(), obs_ori.y(), obs_ori.z()));
-        obs->setTransform(obs_transform);
 
         for (int i = 0; i < pred_hor + 1; i++)
         {
@@ -166,24 +201,6 @@ void NonlinearMPC::set_constraints()
             {
                 in_con(index++) = x(i, j) - x_Ub(j);  // q <= q_max
                 in_con(index++) = -x(i, j) + x_lb(j); // q_min <= q
-            }
-
-            Eigen::VectorXd q = x.row(i).head(dof);
-            pinocchio::updateGeometryPlacements(model, data, geomModel, geomData, q);
-
-            for (int j = 0; j < collision_link; j++) // can't find solution
-            {
-                const pinocchio::GeometryObject &go = geomModel.geometryObjects[j];
-                hpp::fcl::Transform3f go_transform;
-                go_transform.setTranslation(hpp::fcl::Vec3f(geomData.oMg[j].translation()));
-                go_transform.setQuatRotation(hpp::fcl::Quaternion3f(geomData.oMg[j].rotation()));
-
-                auto go_collision_object = std::make_shared<hpp::fcl::CollisionObject>(go.geometry, go_transform);
-
-                hpp::fcl::DistanceRequest request;
-                hpp::fcl::DistanceResult result;
-                hpp::fcl::distance(obs.get(), go_collision_object.get(), request, result);
-                in_con(index++) = -result.min_distance + 0.05 - slack;
             }
         }
     });
@@ -230,21 +247,3 @@ Eigen::Quaterniond NonlinearMPC::getEeOriObs() const
 }
 
 } // namespace nonlinear_mpc
-
-// Eigen::VectorXd q = x0.head(dof);
-// pinocchio::updateGeometryPlacements(model, data, geomModel, geomData, q);
-
-// for (int j = 0; j < collision_link; j++)
-// {
-//     const pinocchio::GeometryObject &go = geomModel.geometryObjects[j];
-//     hpp::fcl::Transform3f go_transform;
-//     go_transform.setTranslation(hpp::fcl::Vec3f(geomData.oMg[j].translation()));
-//     go_transform.setQuatRotation(hpp::fcl::Quaternion3f(geomData.oMg[j].rotation()));
-
-//     auto go_collision_object = std::make_shared<hpp::fcl::CollisionObject>(go.geometry, go_transform);
-
-//     hpp::fcl::DistanceRequest request;
-//     hpp::fcl::DistanceResult result;
-//     hpp::fcl::distance(obs.get(), go_collision_object.get(), request, result);
-//     std::cout << "Distance" << result.min_distance << std::endl;
-// }
