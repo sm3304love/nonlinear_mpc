@@ -9,10 +9,9 @@ NonlinearMPC::NonlinearMPC()
 {
     Q_trans.diagonal() << 80, 80, 80;
     Q_ori.diagonal() << 30, 30, 30;
-    R.diagonal() << 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2;
     Qf_trans.diagonal() << 80, 80, 80;
     Qf_ori.diagonal() << 30, 30, 30;
-    Qf_vel.diagonal() << 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2;
+
     last_cmd.setZero();
 
     x_lb << -6.283185307179586, -6.283185307179586, -3.141592653589793, -6.283185307179586, -6.283185307179586,
@@ -64,7 +63,7 @@ void NonlinearMPC::set_dynamics(const mpc::cvec<num_states> &x)
 bool NonlinearMPC::initialize(ros::NodeHandle &nh, double dt)
 {
     ts = dt;
-    mpc_solver.setContinuosTimeModel(ts);
+    mpc_solver.setDiscretizationSamplingTime(ts);
     mpc_solver.setLoggerLevel(mpc::Logger::log_level::NORMAL);
     mpc_solver.setLoggerPrefix("ROBOT");
     ROS_INFO("MPC initial setup");
@@ -103,13 +102,16 @@ mpc::cvec<num_inputs> NonlinearMPC::computeCommand(mpc::cvec<num_states> x)
 
     mpc::Result<num_inputs> r;
 
-    r = mpc_solver.step(x0, u0);
+    r = mpc_solver.optimize(x0, u0);
 
-    Eigen::VectorXd q = x0.head(dof);
+    Eigen::VectorXd q = x0.row(0).head(dof);
+
     pinocchio::computeJointJacobians(model, data, q);
     Eigen::MatrixXd J = data.J.topRows<6>();
+
     double manipulability = sqrt((J * J.transpose()).determinant());
-    std::cout << "manipulability : " << manipulability << std::endl;
+
+    std::cout << "arm_manipulability: " << manipulability << std::endl;
 
     last_cmd = r.cmd;
 
@@ -143,90 +145,30 @@ void NonlinearMPC::set_obj()
             double pose_cost = pose_error.transpose() * Q_trans * pose_error;
             double ori_cost = ori_error.transpose() * Q_ori * ori_error;
 
-            // Modified weight of input (velocity)
             Eigen::Affine3d T_w_arm;
             T_w_arm.matrix() = T_w_b.matrix() * T_b_arm.matrix();
 
             if ((T_w_arm.translation() - ee_pos_ref).norm() > 1.75)
             {
-                R.diagonal() << 10, 10, 10, 10, 10, 10, 0.2, 0.2, 0.2;
+                R.diagonal() << 5, 5, 5, 5, 5, 5, 0.2, 0.2, 0.2;
             }
             else
             {
-                R.diagonal() << 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 10, 10, 0.2;
+                R.diagonal() << 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 5, 5, 5;
             }
 
             double input_cost = u.row(i).dot(R * u.row(i).transpose());
 
-            cost += 0.5 * (pose_cost + ori_cost + input_cost) + 100 * slack + 0.5 * slack * slack;
-        }
-
-        // // final terminal cost
-        Eigen::VectorXd q_final = x.row(pred_hor).head(dof);
-        Eigen::VectorXd x_base_final = x.row(pred_hor).tail(3);
-
-        T_w_b.linear() = Eigen::AngleAxisd(x_base_final(2), Eigen::Vector3d::UnitZ()).toRotationMatrix();
-        T_w_b.translation() << x_base_final(0), x_base_final(1), 0.0;
-
-        pinocchio::framesForwardKinematics(model, data, q_final);
-        const pinocchio::SE3 &effector_tf_final = data.oMf[frame_id];
-        Eigen::Affine3d T_w_ee;
-        T_w_ee.matrix() = T_w_b.matrix() * T_b_arm.matrix() * effector_tf_final.toHomogeneousMatrix();
-
-        Eigen::Quaterniond ee_ori_final(T_w_ee.rotation());
-        Eigen::Vector3d ee_pos_final = T_w_ee.translation();
-
-        Eigen::VectorXd pose_error_final = ee_pos_final - ee_pos_ref;
-        Eigen::VectorXd ori_error_final = (ee_ori_ref * ee_ori_final.inverse()).vec();
-
-        double final_vel_cost = u.row(pred_hor).dot(Qf_vel * u.row(pred_hor).transpose());
-        double final_pose_cost = pose_error_final.transpose() * Qf_trans * pose_error_final;
-        double final_ori_cost = ori_error_final.transpose() * Qf_ori * ori_error_final;
-
-        // std::cout << "slack : " << slack << std::endl; // weight?
-
-        cost += 0.5 * (final_pose_cost + final_ori_cost + final_vel_cost);
-
-        return cost;
-    });
-}
-
-void NonlinearMPC::set_constraints()
-{
-    mpc_solver.setIneqConFunction([&](mpc::cvec<ineq_c> &in_con, const mpc::mat<pred_hor + 1, num_states> &x,
-                                      const mpc::mat<pred_hor + 1, num_outputs> &,
-                                      const mpc::mat<pred_hor + 1, num_inputs> &u, const double &slack) {
-        int index = 0;
-
-        obs_transform.setTranslation(hpp::fcl::Vec3f(obs_pos(0), obs_pos(1), obs_pos(2)));
-        obs_transform.setQuatRotation(hpp::fcl::Quaternion3f(obs_ori.w(), obs_ori.x(), obs_ori.y(), obs_ori.z()));
-        obs->setTransform(obs_transform);
-
-        for (int i = 0; i < pred_hor + 1; i++)
-        {
-            in_con(index++) = 0 - slack; // 0 <= slack
-
-            for (size_t j = 0; j < dof; j++)
-            {
-                in_con(index++) = u(i, j) - V_arm_Ub(j);  // u <= u_max
-                in_con(index++) = -u(i, j) + V_arm_lb(j); // u_min <= u
-            }
-            for (size_t j = dof; j < num_inputs; j++)
-            {
-                in_con(index++) = u(i, j) - V_base_Ub(j - dof);  // u <= u_max
-                in_con(index++) = -u(i, j) + V_base_lb(j - dof); // u_min <= u
-            }
-            for (int j = 0; j < num_states; j++) //
-            {
-                in_con(index++) = x(i, j) - x_Ub(j);  // q <= q_max
-                in_con(index++) = -x(i, j) + x_lb(j); // q_min <= q
-            }
-
-            Eigen::VectorXd q = x.row(i).head(dof);
-            Eigen::VectorXd x_base = x.row(i).tail(3);
-
             pinocchio::updateGeometryPlacements(model, data, geomModel, geomData, q);
 
+            obs_transform.setTranslation(hpp::fcl::Vec3f(obs_pos(0), obs_pos(1), obs_pos(2)));
+            obs_transform.setQuatRotation(hpp::fcl::Quaternion3f(obs_ori.w(), obs_ori.x(), obs_ori.y(), obs_ori.z()));
+            obs->setTransform(obs_transform);
+
+            Eigen::VectorXd min_distance(1);
+            min_distance(0) = 1000; // 초기 거리값 설정
+
+            // 감지되는 장애물 갯수에 따라 cost를 계산하는 기능 추가 필요
             for (int j = 0; j < num_arm_links; j++)
             {
                 const pinocchio::GeometryObject &go = geomModel.geometryObjects[j];
@@ -246,7 +188,11 @@ void NonlinearMPC::set_constraints()
                 hpp::fcl::DistanceRequest arm_request;
                 hpp::fcl::DistanceResult arm_result;
                 hpp::fcl::distance(obs.get(), go_collision_object.get(), arm_request, arm_result);
-                in_con(index++) = -arm_result.min_distance + 0.1 - slack;
+
+                if (arm_result.min_distance < min_distance(0))
+                {
+                    min_distance(0) = arm_result.min_distance;
+                }
             }
             mobile_collision->setTranslation(hpp::fcl::Vec3f(x_base[0], x_base[1], 0.25));
             hpp::fcl::Quaternion3f quat_mobile(Eigen::AngleAxisd(x_base[2], Eigen::Vector3d::UnitZ()));
@@ -270,14 +216,81 @@ void NonlinearMPC::set_constraints()
                 hpp::fcl::distance(obs_copy.get(), mobile_collision_copy.get(), mobile_request, mobile_result);
             }
 
-            in_con(index++) = -mobile_result.min_distance + 0.3 - slack;
+            if (mobile_result.min_distance < min_distance(0))
+            {
+                min_distance(0) = mobile_result.min_distance;
+            }
 
-            // pinocchio::computeJointJacobians(model, data, q);
-            // Eigen::MatrixXd J = data.J.topRows<6>();
+            Eigen::VectorXd min_distance_obs(1);
+            min_distance_obs(0) = exp(-100 * min_distance(0));
 
-            // double manipulability = sqrt((J * J.transpose()).determinant());
+            Eigen::MatrixXd Q_collision = Eigen::MatrixXd::Identity(1, 1);
+            Q_collision(0, 0) = 100;
+            double collision_cost = min_distance_obs.transpose() * Q_collision * min_distance_obs;
+            cost += 0.5 * (pose_cost + ori_cost + input_cost + collision_cost);
+        }
 
-            // in_con(index++) = -manipulability + 0.01 - slack;
+        // // final terminal cost
+        Eigen::VectorXd q_final = x.row(pred_hor).head(dof);
+        Eigen::VectorXd x_base_final = x.row(pred_hor).tail(3);
+
+        T_w_b.linear() = Eigen::AngleAxisd(x_base_final(2), Eigen::Vector3d::UnitZ()).toRotationMatrix();
+        T_w_b.translation() << x_base_final(0), x_base_final(1), 0.0;
+
+        pinocchio::framesForwardKinematics(model, data, q_final);
+        const pinocchio::SE3 &effector_tf_final = data.oMf[frame_id];
+        Eigen::Affine3d T_w_ee;
+        T_w_ee.matrix() = T_w_b.matrix() * T_b_arm.matrix() * effector_tf_final.toHomogeneousMatrix();
+
+        Eigen::Quaterniond ee_ori_final(T_w_ee.rotation());
+        Eigen::Vector3d ee_pos_final = T_w_ee.translation();
+
+        Eigen::VectorXd pose_error_final = ee_pos_final - ee_pos_ref;
+        Eigen::VectorXd ori_error_final = (ee_ori_ref * ee_ori_final.inverse()).vec();
+
+        double final_pose_cost = pose_error_final.transpose() * Qf_trans * pose_error_final;
+        double final_ori_cost = ori_error_final.transpose() * Qf_ori * ori_error_final;
+
+        cost += 0.5 * (final_pose_cost + final_ori_cost) + 100 * slack + 0.5 * slack * slack;
+        return cost;
+    });
+}
+
+void NonlinearMPC::set_constraints()
+{
+    mpc_solver.setIneqConFunction([&](mpc::cvec<ineq_c> &in_con, const mpc::mat<pred_hor + 1, num_states> &x,
+                                      const mpc::mat<pred_hor + 1, num_outputs> &,
+                                      const mpc::mat<pred_hor + 1, num_inputs> &u, const double &slack) {
+        int index = 0;
+
+        for (int i = 0; i < pred_hor + 1; i++)
+        {
+            in_con(index++) = 0 - slack; // 0 <= slack
+
+            for (size_t j = 0; j < dof; j++)
+            {
+                in_con(index++) = u(i, j) - V_arm_Ub(j);  // u <= u_max
+                in_con(index++) = -u(i, j) + V_arm_lb(j); // u_min <= u
+            }
+            for (size_t j = dof; j < num_inputs; j++)
+            {
+                in_con(index++) = u(i, j) - V_base_Ub(j - dof);  // u <= u_max
+                in_con(index++) = -u(i, j) + V_base_lb(j - dof); // u_min <= u
+            }
+            for (int j = 0; j < num_states; j++) //
+            {
+                in_con(index++) = x(i, j) - x_Ub(j);  // q <= q_max
+                in_con(index++) = -x(i, j) + x_lb(j); // q_min <= q
+            }
+
+            Eigen::VectorXd q = x.row(i).head(dof);
+
+            pinocchio::computeJointJacobians(model, data, q);
+            Eigen::MatrixXd J = data.J.topRows<6>();
+
+            double manipulability = sqrt((J * J.transpose()).determinant());
+
+            in_con(index++) = -manipulability + 0.01 - slack;
         }
     });
 }

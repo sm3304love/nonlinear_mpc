@@ -182,6 +182,18 @@ class MotionPlanner
                 std_msgs::Float64MultiArray state_msg;
                 std_msgs::Float64MultiArray odom_sim;
 
+                // Eigen::Affine3d T_w_arm;
+                // T_w_arm.matrix() = T_w_b.matrix() * T_b_arm.matrix();
+
+                // if ((T_w_arm.translation() - pos_ref).norm() > 1.75)
+                // {
+                //     u.head(dof) = Eigen::VectorXd::Zero(dof);
+                // }
+                // else
+                // {
+                //     u.tail(3) = Eigen::VectorXd::Zero(3);
+                // }
+
                 for (int i = 0; i < 6; i++)
                 {
                     cmd_msg.data.push_back(u[i]);
@@ -213,19 +225,19 @@ class MotionPlanner
                 // Calculate the orientation difference
                 Eigen::Quaterniond ori_diff = ori_ref * ee_ori.inverse();
 
-                // // 위치 차이 출력
-                // std::cout << "Position Difference:" << std::endl;
-                // std::cout << "x: " << pos_diff(0) << std::endl;
-                // std::cout << "y: " << pos_diff(1) << std::endl;
-                // std::cout << "z: " << pos_diff(2) << std::endl;
+                // 위치 차이 출력
+                std::cout << "Position Difference:" << std::endl;
+                std::cout << "x: " << pos_diff(0) << std::endl;
+                std::cout << "y: " << pos_diff(1) << std::endl;
+                std::cout << "z: " << pos_diff(2) << std::endl;
 
-                // // 쿼터니언 차이 출력
-                // std::cout << "Orientation Difference:" << std::endl;
-                // std::cout << "w: " << ori_diff.w() << std::endl;
-                // std::cout << "x: " << ori_diff.x() << std::endl;
-                // std::cout << "y: " << ori_diff.y() << std::endl;
-                // std::cout << "z: " << ori_diff.z() << std::endl;
-                        }
+                // 쿼터니언 차이 출력
+                std::cout << "Orientation Difference:" << std::endl;
+                std::cout << "w: " << ori_diff.w() << std::endl;
+                std::cout << "x: " << ori_diff.x() << std::endl;
+                std::cout << "y: " << ori_diff.y() << std::endl;
+                std::cout << "z: " << ori_diff.z() << std::endl;
+            }
             count++;
             ros::spinOnce();
             loop_rate.sleep();

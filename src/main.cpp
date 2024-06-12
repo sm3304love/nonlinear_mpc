@@ -153,8 +153,6 @@ class MotionPlanner
                 current_ee_pose.orientation.y = ee_ori.y();
                 current_ee_pose.orientation.z = ee_ori.z();
 
-                std::cout << "u: " << u.transpose() << std::endl;
-
                 std_msgs::Float64MultiArray cmd_msg;
                 geometry_msgs::Twist cmd_msg_mobile;
 
@@ -172,24 +170,7 @@ class MotionPlanner
                 mobile_command_pub.publish(cmd_msg_mobile);
                 current_ee_pose_pub.publish(current_ee_pose);
 
-                // // Calculate the position difference
-                // Eigen::Vector3d pos_diff = pos_ref - ee_pos;
-
-                // // Calculate the orientation difference
-                // Eigen::Quaterniond ori_diff = ori_ref * ee_ori.inverse();
-
-                // // 위치 차이 출력
-                // std::cout << "Position Difference:" << std::endl;
-                // std::cout << "x: " << pos_diff(0) << std::endl;
-                // std::cout << "y: " << pos_diff(1) << std::endl;
-                // std::cout << "z: " << pos_diff(2) << std::endl;
-
-                // // 쿼터니언 차이 출력
-                // std::cout << "Orientation Difference:" << std::endl;
-                // std::cout << "w: " << ori_diff.w() << std::endl;
-                // std::cout << "x: " << ori_diff.x() << std::endl;
-                // std::cout << "y: " << ori_diff.y() << std::endl;
-                // std::cout << "z: " << ori_diff.z() << std::endl;
+                ;
             }
             count++;
             ros::spinOnce();
