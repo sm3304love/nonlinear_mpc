@@ -22,6 +22,9 @@ roslaunch mobile_ur20_description mobile_ur20.launch
 rosrun nonlinear_mpc main
 ```
 
+### Visual
+
+![Peek 2024-07-03 18-43](https://github.com/sm3304love/nonlinear_mpc/assets/57741032/320cef34-66af-4084-9921-c38d1c497da9)
 
 
 ### TO DO
