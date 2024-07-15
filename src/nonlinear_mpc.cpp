@@ -104,7 +104,7 @@ mpc::cvec<num_inputs> NonlinearMPC::computeCommand(mpc::cvec<num_states> x)
 
     r = mpc_solver.optimize(x0, u0);
 
-    Eigen::VectorXd q = x0.row(0).head(dof);
+    Eigen::VectorXd q = x0.head(dof);
 
     pinocchio::computeJointJacobians(model, data, q);
     Eigen::MatrixXd J = data.J.topRows<6>();
@@ -165,10 +165,8 @@ void NonlinearMPC::set_obj()
             obs_transform.setQuatRotation(hpp::fcl::Quaternion3f(obs_ori.w(), obs_ori.x(), obs_ori.y(), obs_ori.z()));
             obs->setTransform(obs_transform);
 
-            Eigen::VectorXd min_distance(1);
-            min_distance(0) = 1000; // 초기 거리값 설정
+            double min_distance = 1000;
 
-            // 감지되는 장애물 갯수에 따라 cost를 계산하는 기능 추가 필요
             for (int j = 0; j < num_arm_links; j++)
             {
                 const pinocchio::GeometryObject &go = geomModel.geometryObjects[j];
@@ -189,9 +187,9 @@ void NonlinearMPC::set_obj()
                 hpp::fcl::DistanceResult arm_result;
                 hpp::fcl::distance(obs.get(), go_collision_object.get(), arm_request, arm_result);
 
-                if (arm_result.min_distance < min_distance(0))
+                if (arm_result.min_distance < min_distance)
                 {
-                    min_distance(0) = arm_result.min_distance;
+                    min_distance = arm_result.min_distance;
                 }
             }
             mobile_collision->setTranslation(hpp::fcl::Vec3f(x_base[0], x_base[1], 0.25));
@@ -216,17 +214,15 @@ void NonlinearMPC::set_obj()
                 hpp::fcl::distance(obs_copy.get(), mobile_collision_copy.get(), mobile_request, mobile_result);
             }
 
-            if (mobile_result.min_distance < min_distance(0))
+            if (mobile_result.min_distance < min_distance)
             {
-                min_distance(0) = mobile_result.min_distance;
+                min_distance = mobile_result.min_distance;
             }
 
-            Eigen::VectorXd min_distance_obs(1);
-            min_distance_obs(0) = exp(-100 * min_distance(0));
+            double exp_distance = exp(-100 * min_distance);
 
-            Eigen::MatrixXd Q_collision = Eigen::MatrixXd::Identity(1, 1);
-            Q_collision(0, 0) = 100;
-            double collision_cost = min_distance_obs.transpose() * Q_collision * min_distance_obs;
+            double Q_collision = 100;
+            double collision_cost = exp_distance * Q_collision * exp_distance;
             cost += 0.5 * (pose_cost + ori_cost + input_cost + collision_cost);
         }
 
